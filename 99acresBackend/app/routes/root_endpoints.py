@@ -1,11 +1,58 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 from app.routes.loans import EXPERT_CONSULTATIONS, ExpertConsultation
 from app.routes.properties_simple import SAMPLE_PROPERTIES, PropertySearchRequest
-from datetime import datetime
+from app.database.mongo_models import User
+from app.database.repositories.mongo_user_repository import MongoUserRepository
+from app.utils.auth import verify_password, create_access_token
+from app.config import settings
+from datetime import datetime, timedelta
 
 router = APIRouter()
+security = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> User:
+    """Get current user from token"""
+    try:
+        token = credentials.credentials
+        user = await MongoUserRepository.get_user_from_token(token)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+@router.get("/profile")
+async def get_profile(current_user: User = Depends(get_current_user)):
+    """Get current user profile from SQLite database"""
+    return {
+        "success": True,
+        "user_data": {
+            "id": str(current_user.id),
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "phone": current_user.phone,
+            "role": current_user.role,
+            "is_active": current_user.is_active,
+            "profile_picture": current_user.profile_picture,
+            "address": current_user.address,
+            "city": current_user.city,
+            "state": current_user.state,
+            "pincode": current_user.pincode,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "last_login": current_user.last_login.isoformat() if current_user.last_login else None
+        }
+    }
 
 # Re-export the models for direct access
 class RootExpertConsultation(BaseModel):

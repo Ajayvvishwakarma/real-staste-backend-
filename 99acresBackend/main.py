@@ -1,8 +1,9 @@
 """Entrypoint for FastAPI app. Exports the FastAPI `app` instance for Uvicorn.
 """
 from app.config import settings
-from app.database.sqlite_db import init_db
-from app.routes.auth_simple import router as auth_router  # Simple auth without database dependencies
+from app.database.mongodb import connect_to_mongo, close_mongo_connection, create_sample_data
+from app.routes.auth_mongo import router as auth_router  # MongoDB auth
+from app.routes.campaigns import router as campaigns_router  # Campaign management with MongoDB
 from app.routes.properties_simple import router as properties_router  # Simple properties with sample data
 from app.routes.listings import router as listings_router  # Property listings with filtering
 from app.routes.plain_listings import router as plain_listings_router  # Plain simple listings
@@ -28,10 +29,13 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    # Startup
+    await connect_to_mongo()
+    await create_sample_data()
     os.makedirs(settings.UPLOAD_DIRECTORY, exist_ok=True)
     yield
-    # Shutdown logic (if needed)
+    # Shutdown
+    await close_mongo_connection()
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -40,17 +44,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS Configuration - Allow all origins for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"],  # Allow all origins in development
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIRECTORY), name="uploads")
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(campaigns_router, prefix="/api/campaigns", tags=["Campaign Management"])
 app.include_router(properties_router, prefix="/api/properties", tags=["Properties"])
 app.include_router(listings_router, prefix="/api/listings", tags=["Property Listings"])
 app.include_router(plain_listings_router, prefix="/api/plain-listings", tags=["Plain Listings"])

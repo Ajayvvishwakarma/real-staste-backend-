@@ -9,11 +9,12 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
     
-    # Database - SQLite Configuration
-    DATABASE_URL: str = "sqlite+aiosqlite:///./99acres.db"
+    # Database - MongoDB Configuration
+    MONGODB_URL: str = "mongodb+srv://amit24ve:Amit%402403.@trading.70xxozj.mongodb.net/?retryWrites=true&w=majority&appName=trading"
+    DATABASE_NAME: str = "99acres_db"
     
-    # Legacy MongoDB settings (not used with SQLite)
-    MONGODB_URL: str = "mongodb://localhost:27017/99acres_db"
+    # Legacy SQLite settings (not used with MongoDB)
+    DATABASE_URL: str = "sqlite+aiosqlite:///./99acres.db"
     SKIP_DB: bool = False
     MONGODB_TLS_CA_FILE: str = ""
     
@@ -26,8 +27,10 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
+        "http://localhost:3004",
         "http://localhost:5173", 
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3004",
         "http://127.0.0.1:5173",
         "http://localhost:8080"
     ]

@@ -1,9 +1,10 @@
 from typing import Optional, List
-from bson import ObjectId
 from datetime import datetime
+from sqlalchemy import select
 from app.database.sqlite_models import User
 from app.database.enums import UserRole
-from app.utils.auth import get_password_hash
+from app.utils.auth import get_password_hash, verify_token
+from app.database.sqlite_db import get_session
 
 
 class UserRepository:
@@ -16,53 +17,120 @@ class UserRepository:
             user_data['password_hash'] = get_password_hash(user_data.pop('password'))
         
         user = User(**user_data)
-        await user.insert()
-        return user
+        async with get_session() as session:
+            try:
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+                return user
+            except Exception as e:
+                await session.rollback()
+                raise e
     
     @staticmethod
     async def get_user_by_id(user_id: str) -> Optional[User]:
         """Get user by ID"""
-        try:
-            return await User.get(ObjectId(user_id))
-        except:
-            return None
+        async with get_session() as session:
+            try:
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                return result.scalar_one_or_none()
+            except Exception as e:
+                print(f"Error getting user by ID: {e}")
+                return None
     
     @staticmethod
     async def get_user_by_email(email: str) -> Optional[User]:
         """Get user by email"""
-        return await User.find_one(User.email == email)
+        async with get_session() as session:
+            try:
+                stmt = select(User).where(User.email == email)
+                result = await session.execute(stmt)
+                return result.scalar_one_or_none()
+            except Exception as e:
+                print(f"Error getting user by email: {e}")
+                return None
     
     @staticmethod
     async def get_user_by_email_or_username(identifier: str) -> Optional[User]:
         """Get user by email"""
-        return await User.find_one(User.email == identifier)
+        async with get_session() as session:
+            try:
+                stmt = select(User).where(User.email == identifier)
+                result = await session.execute(stmt)
+                return result.scalar_one_or_none()
+            except Exception as e:
+                print(f"Error getting user by identifier: {e}")
+                return None
+            
+    @staticmethod
+    async def get_user_from_token(token: str) -> Optional[User]:
+        """Get user from JWT token"""
+        try:
+            user_id = verify_token(token)
+            if user_id:
+                return await UserRepository.get_user_by_id(user_id)
+            return None
+        except Exception as e:
+            print(f"Error verifying token: {e}")
+            return None
     
     @staticmethod
     async def update_user(user_id: str, update_data: dict) -> Optional[User]:
         """Update user"""
-        try:
-            user = await User.get(ObjectId(user_id))
-            if user:
-                update_data['updated_at'] = datetime.utcnow()
-                for key, value in update_data.items():
-                    setattr(user, key, value)
-                await user.save()
-                return user
-        except:
-            pass
-        return None
+        async with get_session() as session:
+            try:
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    update_data['updated_at'] = datetime.utcnow()
+                    for key, value in update_data.items():
+                        setattr(user, key, value)
+                    await session.commit()
+                    await session.refresh(user)
+                    return user
+                return None
+            except Exception as e:
+                await session.rollback()
+                print(f"Error updating user: {e}")
+                return None
+    
+    @staticmethod
+    async def update_last_login(user_id: str) -> None:
+        """Update user's last login time"""
+        async with get_session() as session:
+            try:
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    user.last_login = datetime.utcnow()
+                    await session.commit()
+            except Exception as e:
+                await session.rollback()
+                print(f"Error updating last login: {e}")
     
     @staticmethod
     async def delete_user(user_id: str) -> bool:
         """Delete user"""
-        try:
-            user = await User.get(ObjectId(user_id))
-            if user:
-                await user.delete()
-                return True
-        except:
-            pass
-        return False
+        async with get_session() as session:
+            try:
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    await session.delete(user)
+                    await session.commit()
+                    return True
+                return False
+            except Exception as e:
+                await session.rollback()
+                print(f"Error deleting user: {e}")
+                return False
     
     @staticmethod
     async def get_users(
