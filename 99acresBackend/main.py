@@ -14,7 +14,6 @@ from app.routes.leads import router as leads_router  # Lead management and CRM
 from app.routes.lead_packages import router as lead_packages_router  # Lead packages and pricing plans
 from app.routes.lead_success_stories import router as lead_success_stories_router  # Success stories and testimonials
 from app.routes.banners import router as banners_router  # Website banners and advertisements
-from app.routes.emailers_sqlite import router as emailers_router  # SQLite emailers with database persistence
 from app.routes.products_redirect import router as products_router  # Redirect products to properties
 from app.routes.subscriptions import router as subscriptions_router  # Subscription plans and management
 from app.routes.user_simple import router as user_router  # Simple user management
@@ -69,7 +68,6 @@ app.include_router(leads_router, prefix="/api/leads", tags=["Lead Management"])
 app.include_router(lead_packages_router, prefix="/api/lead-packages", tags=["Lead Packages"])
 app.include_router(lead_success_stories_router, prefix="/api/lead-success-stories", tags=["Success Stories"])
 app.include_router(banners_router, prefix="/api/banners", tags=["Website Banners"])
-app.include_router(emailers_router, prefix="/api/emailers", tags=["Email Management"])
 app.include_router(products_router, prefix="/api/products", tags=["Products Redirect"])
 app.include_router(subscriptions_router, prefix="/api/subscription", tags=["Subscription Management"])
 app.include_router(user_router, prefix="/api/user", tags=["User Management"])
