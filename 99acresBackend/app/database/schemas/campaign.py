@@ -40,7 +40,7 @@ class Campaign(BaseModel):
 
 class CampaignCreate(BaseModel):
     """Schema for creating a campaign"""
-    name: str
+    campaignName: str = Field(..., alias="name")
     description: Optional[str] = None
     status: str = "active"
     campaign_type: str = "marketing"
@@ -50,6 +50,9 @@ class CampaignCreate(BaseModel):
     target_audience: Optional[str] = None
     platform: Optional[str] = None
     tags: List[str] = []
+
+    class Config:
+        allow_population_by_field_name = True
 
 class CampaignUpdate(BaseModel):
     """Schema for updating a campaign"""

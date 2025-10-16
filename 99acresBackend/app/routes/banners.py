@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
+from app.database.mongodb import mongodb
 
 router = APIRouter()
 
@@ -22,70 +23,6 @@ class BannerUpdate(BaseModel):
     position: Optional[str] = None
     is_active: Optional[bool] = None
 
-# Sample banner data
-SAMPLE_BANNERS = [
-    {
-        "id": 1,
-        "title": "Luxury Apartments Sale",
-        "description": "Get up to 20% off on luxury apartments in prime locations",
-        "image_url": "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800",
-        "link_url": "/properties?type=apartment",
-        "position": "home",
-        "is_active": True,
-        "created_at": "2025-09-15T10:00:00",
-        "views": 1250,
-        "clicks": 89
-    },
-    {
-        "id": 2,
-        "title": "Commercial Spaces Available",
-        "description": "Prime commercial spaces in business districts - Book now!",
-        "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
-        "link_url": "/properties?type=commercial",
-        "position": "home",
-        "is_active": True,
-        "created_at": "2025-09-20T14:30:00",
-        "views": 890,
-        "clicks": 67
-    },
-    {
-        "id": 3,
-        "title": "Property Investment Guide",
-        "description": "Download our comprehensive property investment guide",
-        "image_url": "https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800",
-        "link_url": "/resources/investment-guide",
-        "position": "sidebar",
-        "is_active": True,
-        "created_at": "2025-09-25T09:15:00",
-        "views": 456,
-        "clicks": 23
-    },
-    {
-        "id": 4,
-        "title": "Weekend Property Fair",
-        "description": "Join us this weekend for exclusive property deals",
-        "image_url": "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=800",
-        "link_url": "/events/property-fair",
-        "position": "home",
-        "is_active": False,
-        "created_at": "2025-08-10T16:45:00",
-        "views": 2340,
-        "clicks": 156
-    },
-    {
-        "id": 5,
-        "title": "New Launch: Green Valley",
-        "description": "Eco-friendly apartments with modern amenities",
-        "image_url": "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800",
-        "link_url": "/properties/green-valley-apartments",
-        "position": "listing",
-        "is_active": True,
-        "created_at": "2025-10-01T08:00:00",
-        "views": 123,
-        "clicks": 12
-    }
-]
-
 @router.get("", response_model=dict)
 @router.get("/", response_model=dict)
 async def get_banners(
@@ -95,40 +32,21 @@ async def get_banners(
 ):
     """Get website banners with optional filters"""
     try:
-        filtered_banners = SAMPLE_BANNERS.copy()
-        
-        # Apply filters
+        query = {}
         if position:
-            filtered_banners = [b for b in filtered_banners if b["position"].lower() == position.lower()]
-        
+            query["position"] = position
         if is_active is not None:
-            filtered_banners = [b for b in filtered_banners if b["is_active"] == is_active]
-        
-        # Apply limit
-        if limit:
-            filtered_banners = filtered_banners[:limit]
-        
-        # Calculate statistics
-        total_views = sum([b["views"] for b in SAMPLE_BANNERS])
-        total_clicks = sum([b["clicks"] for b in SAMPLE_BANNERS])
-        avg_ctr = round((total_clicks / total_views * 100), 2) if total_views > 0 else 0
+            query["is_active"] = is_active
+
+        banners = await mongodb.database.banners.find(query).to_list(limit)
+        total_count = await mongodb.database.banners.count_documents(query)
         
         return {
             "success": True,
             "message": "Banners retrieved successfully",
-            "data": filtered_banners,
-            "count": len(filtered_banners),
-            "total_available": len(SAMPLE_BANNERS),
-            "statistics": {
-                "total_views": total_views,
-                "total_clicks": total_clicks,
-                "average_ctr": f"{avg_ctr}%"
-            },
-            "filters_applied": {
-                "position": position,
-                "is_active": is_active,
-                "limit": limit
-            }
+            "data": banners,
+            "count": len(banners),
+            "total_available": total_count
         }
         
     except Exception as e:
@@ -143,7 +61,7 @@ async def get_banners(
 async def get_banner_by_id(banner_id: int):
     """Get a specific banner by ID"""
     try:
-        banner = next((b for b in SAMPLE_BANNERS if b["id"] == banner_id), None)
+        banner = await mongodb.database.banners.find_one({"_id": banner_id})
         
         if not banner:
             raise HTTPException(status_code=404, detail="Banner not found")
@@ -167,7 +85,7 @@ async def get_banner_by_id(banner_id: int):
 async def get_banners_by_position(position: str):
     """Get banners by position (home, sidebar, listing, etc.)"""
     try:
-        position_banners = [b for b in SAMPLE_BANNERS if b["position"].lower() == position.lower() and b["is_active"]]
+        position_banners = await mongodb.database.banners.find({"position": position, "is_active": True}).to_list(100)
         
         return {
             "success": True,
@@ -189,7 +107,7 @@ async def get_banners_by_position(position: str):
 async def get_active_banners():
     """Get only active banners"""
     try:
-        active_banners = [b for b in SAMPLE_BANNERS if b["is_active"]]
+        active_banners = await mongodb.database.banners.find({"is_active": True}).to_list(100)
         
         return {
             "success": True,
@@ -210,15 +128,15 @@ async def get_active_banners():
 async def get_banner_statistics():
     """Get banner performance statistics"""
     try:
-        total_banners = len(SAMPLE_BANNERS)
-        active_banners = len([b for b in SAMPLE_BANNERS if b["is_active"]])
-        total_views = sum([b["views"] for b in SAMPLE_BANNERS])
-        total_clicks = sum([b["clicks"] for b in SAMPLE_BANNERS])
+        total_banners = await mongodb.database.banners.count_documents({})
+        active_banners = await mongodb.database.banners.count_documents({"is_active": True})
+        total_views = sum([b["views"] for b in await mongodb.database.banners.find({}).to_list(1000)])
+        total_clicks = sum([b["clicks"] for b in await mongodb.database.banners.find({}).to_list(1000)])
         avg_ctr = round((total_clicks / total_views * 100), 2) if total_views > 0 else 0
         
         # Position breakdown
         positions = {}
-        for banner in SAMPLE_BANNERS:
+        for banner in await mongodb.database.banners.find({}).to_list(1000):
             pos = banner["position"]
             if pos not in positions:
                 positions[pos] = {"count": 0, "views": 0, "clicks": 0}
@@ -227,7 +145,7 @@ async def get_banner_statistics():
             positions[pos]["clicks"] += banner["clicks"]
         
         # Top performing banners
-        top_banners = sorted(SAMPLE_BANNERS, key=lambda x: x["clicks"], reverse=True)[:3]
+        top_banners = sorted(await mongodb.database.banners.find({}).to_list(1000), key=lambda x: x["clicks"], reverse=True)[:3]
         top_performers = [{"id": b["id"], "title": b["title"], "clicks": b["clicks"]} for b in top_banners]
         
         return {
@@ -255,30 +173,19 @@ async def get_banner_statistics():
         }
 
 @router.post("/", response_model=dict)
-async def create_banner(banner_data: BannerCreate):
-    """Create a new banner (simulation - would save to database)"""
+async def create_banner(banner: BannerCreate):
+    """Create a new banner"""
     try:
-        new_id = max([b["id"] for b in SAMPLE_BANNERS]) + 1
-        new_banner = {
-            "id": new_id,
-            "title": banner_data.title,
-            "description": banner_data.description,
-            "image_url": banner_data.image_url,
-            "link_url": banner_data.link_url,
-            "position": banner_data.position,
-            "is_active": banner_data.is_active,
-            "created_at": datetime.now().isoformat(),
-            "views": 0,
-            "clicks": 0
-        }
-        
-        # In real app, this would be saved to database
-        SAMPLE_BANNERS.append(new_banner)
+        banner_data = banner.dict()
+        banner_data["created_at"] = datetime.utcnow()
+        banner_data["views"] = 0
+        banner_data["clicks"] = 0
+        result = await mongodb.database.banners.insert_one(banner_data)
         
         return {
             "success": True,
             "message": "Banner created successfully",
-            "data": new_banner
+            "data": {"id": str(result.inserted_id)}
         }
         
     except Exception as e:
@@ -292,29 +199,18 @@ async def create_banner(banner_data: BannerCreate):
 async def update_banner(banner_id: int, banner_data: BannerUpdate):
     """Update an existing banner (simulation)"""
     try:
-        banner_index = next((i for i, b in enumerate(SAMPLE_BANNERS) if b["id"] == banner_id), None)
+        update_data = {k: v for k, v in banner_data.dict().items() if v is not None}
+        result = await mongodb.database.banners.update_one({"_id": banner_id}, {"$set": update_data})
         
-        if banner_index is None:
-            raise HTTPException(status_code=404, detail="Banner not found")
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Banner not found or no changes made")
         
-        # Update fields if provided
-        if banner_data.title is not None:
-            SAMPLE_BANNERS[banner_index]["title"] = banner_data.title
-        if banner_data.description is not None:
-            SAMPLE_BANNERS[banner_index]["description"] = banner_data.description
-        if banner_data.image_url is not None:
-            SAMPLE_BANNERS[banner_index]["image_url"] = banner_data.image_url
-        if banner_data.link_url is not None:
-            SAMPLE_BANNERS[banner_index]["link_url"] = banner_data.link_url
-        if banner_data.position is not None:
-            SAMPLE_BANNERS[banner_index]["position"] = banner_data.position
-        if banner_data.is_active is not None:
-            SAMPLE_BANNERS[banner_index]["is_active"] = banner_data.is_active
+        updated_banner = await mongodb.database.banners.find_one({"_id": banner_id})
         
         return {
             "success": True,
             "message": "Banner updated successfully",
-            "data": SAMPLE_BANNERS[banner_index]
+            "data": updated_banner
         }
         
     except HTTPException:
@@ -330,16 +226,14 @@ async def update_banner(banner_id: int, banner_data: BannerUpdate):
 async def delete_banner(banner_id: int):
     """Delete a banner (simulation)"""
     try:
-        banner_index = next((i for i, b in enumerate(SAMPLE_BANNERS) if b["id"] == banner_id), None)
+        result = await mongodb.database.banners.delete_one({"_id": banner_id})
         
-        if banner_index is None:
+        if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Banner not found")
-        
-        deleted_banner = SAMPLE_BANNERS.pop(banner_index)
         
         return {
             "success": True,
-            "message": f"Banner '{deleted_banner['title']}' deleted successfully",
+            "message": f"Banner deleted successfully",
             "data": {"deleted_banner_id": banner_id}
         }
         
