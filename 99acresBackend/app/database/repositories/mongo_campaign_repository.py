@@ -9,19 +9,75 @@ class MongoCampaignRepository:
     """Repository for campaign CRUD operations with MongoDB"""
     
     @staticmethod
+    def _normalize_campaign(campaign_doc: dict) -> dict:
+        """Normalize campaign data for frontend compatibility"""
+        # Add createdAt if not present (use created_at)
+        if 'created_at' in campaign_doc and 'createdAt' not in campaign_doc:
+            campaign_doc['createdAt'] = campaign_doc['created_at']
+        
+        # Add updatedAt if not present (use updated_at)
+        if 'updated_at' in campaign_doc and 'updatedAt' not in campaign_doc:
+            campaign_doc['updatedAt'] = campaign_doc['updated_at']
+        
+        # Calculate open rate if not present
+        if 'openRate' not in campaign_doc or campaign_doc.get('openRate') is None:
+            emails_sent = campaign_doc.get('emailsSent', 0) or campaign_doc.get('recipients', 0)
+            emails_opened = campaign_doc.get('emailsOpened', 0)
+            campaign_doc['openRate'] = (emails_opened / emails_sent * 100) if emails_sent > 0 else 0.0
+        
+        # Calculate click rate if not present
+        if 'clickRate' not in campaign_doc or campaign_doc.get('clickRate') is None:
+            emails_sent = campaign_doc.get('emailsSent', 0) or campaign_doc.get('recipients', 0)
+            emails_clicked = campaign_doc.get('emailsClicked', 0)
+            campaign_doc['clickRate'] = (emails_clicked / emails_sent * 100) if emails_sent > 0 else 0.0
+        
+        # Ensure email metrics exist
+        campaign_doc.setdefault('emailsSent', 0)
+        campaign_doc.setdefault('emailsOpened', 0)
+        campaign_doc.setdefault('emailsClicked', 0)
+        
+        return campaign_doc
+    
+    @staticmethod
     async def create_campaign(campaign_data: CampaignCreate, user_id: str) -> Campaign:
         """Create a new campaign"""
         db = get_database()
         
-        campaign_dict = campaign_data.model_dump()
-        campaign_dict['created_at'] = datetime.utcnow()
+        campaign_dict = campaign_data.model_dump(exclude_unset=True)
+        
+        # Use campaignName as name if name is not provided
+        if not campaign_dict.get('name') and campaign_dict.get('campaignName'):
+            campaign_dict['name'] = campaign_dict['campaignName']
+        elif campaign_dict.get('name') and not campaign_dict.get('campaignName'):
+            campaign_dict['campaignName'] = campaign_dict['name']
+        
+        # Set recipients count from recipientList if not provided
+        if 'recipientList' in campaign_dict and not campaign_dict.get('recipients'):
+            campaign_dict['recipients'] = len(campaign_dict['recipientList'])
+        
+        # Remove createdAt from frontend if present (use server time)
+        campaign_dict.pop('createdAt', None)
+        
+        # Set timestamps
+        now = datetime.utcnow()
+        campaign_dict['created_at'] = now
+        campaign_dict['createdAt'] = now  # For frontend compatibility
         campaign_dict['created_by'] = user_id
         campaign_dict['owner_id'] = user_id
-        campaign_dict['impressions'] = 0
-        campaign_dict['clicks'] = 0
-        campaign_dict['conversions'] = 0
-        campaign_dict['leads_generated'] = 0
-        campaign_dict['spent'] = 0.0
+        
+        # Initialize metrics
+        campaign_dict['impressions'] = campaign_dict.get('impressions', 0)
+        campaign_dict['clicks'] = campaign_dict.get('clicks', 0)
+        campaign_dict['conversions'] = campaign_dict.get('conversions', 0)
+        campaign_dict['leads_generated'] = campaign_dict.get('leads_generated', 0)
+        campaign_dict['spent'] = campaign_dict.get('spent', 0.0)
+        
+        # Initialize email metrics
+        campaign_dict['emailsSent'] = campaign_dict.get('emailsSent', 0)
+        campaign_dict['emailsOpened'] = campaign_dict.get('emailsOpened', 0)
+        campaign_dict['emailsClicked'] = campaign_dict.get('emailsClicked', 0)
+        campaign_dict['openRate'] = 0.0
+        campaign_dict['clickRate'] = 0.0
         
         result = await db.campaigns.insert_one(campaign_dict)
         created_campaign = await db.campaigns.find_one({"_id": result.inserted_id})
@@ -34,6 +90,7 @@ class MongoCampaignRepository:
         try:
             campaign_doc = await db.campaigns.find_one({"_id": ObjectId(campaign_id)})
             if campaign_doc:
+                campaign_doc = MongoCampaignRepository._normalize_campaign(campaign_doc)
                 return Campaign(**campaign_doc)
             return None
         except Exception as e:
@@ -62,7 +119,13 @@ class MongoCampaignRepository:
             
             cursor = db.campaigns.find(query).skip(skip).limit(limit).sort("created_at", -1)
             campaigns = await cursor.to_list(length=limit)
-            return [Campaign(**campaign) for campaign in campaigns]
+            
+            # Normalize all campaigns
+            normalized_campaigns = [
+                Campaign(**MongoCampaignRepository._normalize_campaign(campaign)) 
+                for campaign in campaigns
+            ]
+            return normalized_campaigns
         except Exception as e:
             print(f"Error getting campaigns: {e}")
             return []

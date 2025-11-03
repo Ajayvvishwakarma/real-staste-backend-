@@ -7,10 +7,24 @@ from app.database.mongo_models import PyObjectId
 class Campaign(BaseModel):
     """Campaign model for MongoDB"""
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
-    name: str
+    name: Optional[str] = None
+    campaignName: Optional[str] = None
     description: Optional[str] = None
-    status: str = "active"  # active, paused, completed, archived
-    campaign_type: str = "marketing"  # marketing, email, sms, social_media
+    status: str = "draft"  # draft, active, paused, completed, archived
+    campaign_type: str = "email"  # marketing, email, sms, social_media
+    
+    # Email campaign specific fields
+    subject: Optional[str] = None
+    emailContent: Optional[str] = None
+    recipientList: Optional[List[str]] = []
+    recipients: Optional[int] = None
+    emailsSent: Optional[int] = 0
+    emailsOpened: Optional[int] = 0
+    emailsClicked: Optional[int] = 0
+    openRate: Optional[float] = 0.0
+    clickRate: Optional[float] = 0.0
+    
+    # Regular campaign fields
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     budget: Optional[float] = 0.0
@@ -30,29 +44,45 @@ class Campaign(BaseModel):
     created_by: Optional[str] = None
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    createdAt: Optional[datetime] = None  # For frontend compatibility
     updated_at: Optional[datetime] = None
+    updatedAt: Optional[datetime] = None  # For frontend compatibility
     
     model_config = {
         "populate_by_name": True,
         "arbitrary_types_allowed": True,
-        "json_encoders": {PyObjectId: str}
+        "json_encoders": {PyObjectId: str, datetime: lambda v: v.isoformat() if v else None}
     }
 
 class CampaignCreate(BaseModel):
     """Schema for creating a campaign"""
-    campaignName: str = Field(..., alias="name")
+    name: Optional[str] = None
+    campaignName: Optional[str] = None
     description: Optional[str] = None
-    status: str = "active"
-    campaign_type: str = "marketing"
+    status: str = "draft"
+    campaign_type: str = "email"
+    
+    # Email campaign specific fields
+    subject: Optional[str] = None
+    emailContent: Optional[str] = None
+    recipientList: Optional[List[str]] = []
+    recipients: Optional[int] = None
+    
+    # Regular campaign fields
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     budget: Optional[float] = 0.0
     target_audience: Optional[str] = None
     platform: Optional[str] = None
     tags: List[str] = []
+    
+    # Accept createdAt from frontend but don't use it (will use server time)
+    createdAt: Optional[datetime] = None
 
-    class Config:
-        allow_population_by_field_name = True
+    model_config = {
+        "populate_by_name": True,
+        "extra": "allow"
+    }
 
 class CampaignUpdate(BaseModel):
     """Schema for updating a campaign"""
