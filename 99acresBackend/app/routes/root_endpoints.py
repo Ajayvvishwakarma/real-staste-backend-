@@ -530,3 +530,86 @@ async def get_property_articles():
         "articles": articles,
         "total_articles": len(articles)
     }
+
+# Loan Eligibility Request Schema
+class LoanEligibilityRequest(BaseModel):
+    age: int
+    occupation: str  # "Salaried" or "Self Employed"
+    income: float
+    existingEmi: float
+    interestRate: float
+    tenure: int
+    borrowers: Optional[str] = "One"  # "One" or "Two"
+
+@router.post("/loan-eligibility")
+async def check_loan_eligibility(request: LoanEligibilityRequest):
+    """Check loan eligibility based on income, age, and other factors"""
+    try:
+        # Map occupation to employment type
+        employment_type = "salaried" if request.occupation.lower() == "salaried" else "self_employed"
+        
+        # Calculate available income for EMI (50% rule)
+        available_income = request.income * 0.5 - request.existingEmi
+        
+        # Base eligibility multiplier
+        if employment_type == "salaried":
+            multiplier = 60  # 60x monthly income
+        else:
+            multiplier = 55  # 55x monthly income
+        
+        # Age factor (optimal age is 30-45)
+        if 30 <= request.age <= 45:
+            age_factor = 1.0
+        elif 25 <= request.age < 30 or 45 < request.age <= 55:
+            age_factor = 0.95
+        else:
+            age_factor = 0.85
+        
+        # Borrowers factor
+        borrowers_factor = 1.2 if request.borrowers == "Two" else 1.0
+        
+        # Calculate max loan amount
+        max_loan_amount = available_income * multiplier * age_factor * borrowers_factor
+        
+        # Calculate max EMI
+        max_emi = available_income
+        
+        # Calculate property value (assuming 80% LTV)
+        max_property_value = max_loan_amount / 0.8
+        
+        # Eligibility check
+        eligible = available_income > 0 and max_loan_amount > 500000
+        
+        # Calculate sample EMI for the max loan amount
+        monthly_rate = (request.interestRate / 100) / 12
+        tenure_months = request.tenure * 12
+        
+        if monthly_rate == 0:
+            sample_emi = max_loan_amount / tenure_months
+        else:
+            sample_emi = max_loan_amount * (monthly_rate * (1 + monthly_rate) ** tenure_months) / ((1 + monthly_rate) ** tenure_months - 1)
+        
+        return {
+            "eligible": eligible,
+            "maxLoanAmount": round(max_loan_amount, 2),
+            "maxEmi": round(max_emi, 2),
+            "maxPropertyValue": round(max_property_value, 2),
+            "availableIncome": round(available_income, 2),
+            "sampleEmi": round(sample_emi, 2),
+            "factors": {
+                "employmentFactor": multiplier,
+                "ageFactor": age_factor,
+                "borrowersFactor": borrowers_factor,
+                "tenure": request.tenure,
+                "interestRate": request.interestRate
+            },
+            "message": "Eligible for loan" if eligible else "Not eligible - insufficient income",
+            "recommendations": [
+                "Reduce existing EMI to increase eligibility" if request.existingEmi > 0 else "No existing EMI - good for eligibility",
+                "Consider co-borrower to increase loan amount" if request.borrowers == "One" else "Co-borrower already included",
+                "Optimal age range for best rates: 30-45 years" if request.age < 30 or request.age > 45 else "Age is in optimal range"
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking loan eligibility: {str(e)}")
